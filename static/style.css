@@ -1,0 +1,204 @@
+*{
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body{
+    font-family: Arial, Helvetica, sans-serif;
+    background-color: #f4f6f8;
+}
+
+.container{
+    max-width: 800px;
+    margin: 20px auto;
+    background: #fff;
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 0 10px #ccc;
+}
+
+h1, h2{
+    text-align: center;
+}
+
+form{
+    display: grid;
+    gap: 10px;
+}
+
+input, button{
+    padding: 8px;
+    font-size: 16px;
+}
+
+/*Alteração para responsividade da tabela*/
+
+#tabelaCompras{
+    /*Garante que não tente ser maior que o container*/
+    width: 100%;
+}
+
+/*Envolve a tabela para permitir a rolagem horizontal*/
+.tabela-wrapper{
+    overflow-x: auto; /*Permite a rolagem horizontal*/
+    margin-top: 15px;
+    margin-bottom: 15px;
+}
+
+table{
+    /* width: 100%; */
+    width: max-content;  /*Garante que em telas grandes ocupe 100%*/
+    min-width: 100%;     /*Inseriro pela correção - Gemini*/
+    border-collapse: collapse;
+    /* margin-top: 15px; */
+}
+
+th, td{
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: center;
+    min-width: 80px;  /*Ajusta a largura das colunas criticas*/
+}
+
+button{
+    background-color: #2d89ef;
+    color: white;
+    border: none;
+    cursor: pointer;
+    border-radius: 6px;
+}
+
+button:hover{
+    background-color: #1b5fab;
+}
+
+/*RESPONSIVIDADE*/
+@media (max-width: 600px) {
+    form{
+        grid-template-columns: 1fr;
+    }
+
+    /*Centraliza o texto no corpo, pois a tela é estreita*/
+    .container{
+        padding: 10px;
+        margin: 10px;
+    }
+
+    /*Reduz o tamanho das fontes na tabela para caber mais*/
+    th, td{
+        font-size: 0.8rem;
+        padding: 6px;
+    }
+
+    table, thead, tbody, th, td, tr{
+        display: block;
+    }
+
+    th{
+        display: none;
+    }
+
+    td{
+        border: none;
+        border-bottom: 1px solid #ddd;
+        display: flex;
+        justify-content: center;
+    }
+}
+
+/* HOME - ESTILIZANDO CARTÕES - */
+
+.main-container{
+    display: flex;
+    flex-wrap: wrap;
+    min-height: 100vh;
+    background-color: #f4f6f8;
+}
+
+.left-side{
+    flex: 1 1 300px;
+    background-color: #2d89ef;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 20px;
+}
+
+.left-side img{
+    width: 120px;
+    margin-bottom: 15px;
+}
+
+.right-side{
+    flex: 1 1 400px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 25px;
+    padding: 30px;
+}
+
+.card{
+    background: white;
+    border-radius: 15px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    width: 250px;
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.3s;
+    padding: 15px;
+}
+
+.card:hover{
+    transform: scale(1.05);
+}
+
+.card img{
+    width: 60px;
+    margin-bottom: 10px;
+}
+
+/* RELATORIOS */
+
+.container-relatorio{
+    max-width: 1000px;
+    margin: 0 auto;
+    text-align: center;
+    padding: 20px;
+}
+
+.cards-relatorio{
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 25px;
+    margin-top: 30px;
+}
+
+#resultado-relatorio{
+    margin-top: 30px;
+    text-align: left;
+    width: 100%;        /*Garante ocupar largura total, forçando a quebra de linha no flex*/
+    min-width: 300px;   /*Define a largura minima para não encolher em telas pequenas*/
+    /*Estilizando para resumo aparecer como bloco*/
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    padding: 20px;
+}
+
+@media (max-width: 768px){
+    .main-container{
+        flex-direction: column;
+    }
+    /*Centralizar cartões verticalmente em telas pequenas,s e desejar*/
+    .cards-relatorio{
+        /*Remove o gap entre cartões para melhorar a visualização mobile, se necessário*/
+        gap: 15px;
+    }
+}

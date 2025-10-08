@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cadastro de Compras</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css')}}">
+</head>
+<body>
+    <div class="container">
+        <h1>Cadastro de Compras</h1>
+
+        {% with messages = get_flashed_messages() %}
+          {% if messages %}
+            <ul class="mensagem">
+              {% for msg in messages %}
+                <li>{{ msg }}</li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        {% endwith %}
+
+        <form method="post" action="/cadastrar">
+            <label for="data">Data:</label>
+            <input type="date" id="data" name="data" required>
+
+            <label for="local">Local:</label>
+            <input type="text" id="local" name="local" required>
+
+            <label for="produto">Descrição do Produto:</label>
+            <input type="text" id="produto" name="produto" required>
+
+            <label for="quantidade">Quantidade:</label>
+            <input type="number" id="quantidade" name="quantidade" required>
+
+            <label for="valor">Valor (R$):</label>
+            <input type="number" id="valor" step="0.01" name="valor" required>
+
+            <button type="submit">Enviar</button>
+        </form>
+
+        <hr>
+
+        <h2>Itens Cadastrados</h2>
+
+        <div class="tabela-wrapper">
+            <table id="tabelaCompras">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Data</th>
+                    <th>Local</th>
+                    <th>Produto</th>
+                    <th>Quantidade</th>
+                    <th>Valor (R$)</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in compras %}
+                <tr>
+                    <td>{{ item[0] }}</td>
+                    <td>{{ item[1] }}</td>
+                    <td>{{ item[2] }}</td>
+                    <td>{{ item[3] }}</td>
+                    <td>{{ item[4] }}</td>
+                    <td>{{ item[5] }}</td>
+                    <td>
+                        <form action="/delete/{{ item[0] }}" method="post" style="display:inline;">
+                            <button type="submit" class="btn-excluir">Excluir</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        </div>        
+
+        <div class="botoes">
+            <form action="/salvar" method="get" style="display:inline;">
+                <button type="submit">Salvar</button>
+            </form>
+            <form action="/gerar_csv" method="get" style="display:inline;">
+                <button type="submit">Gerar CSV</button>
+            </form>
+            <button onclick="window.location.href='/'">Sair</button>
+        </div>
+    </div>
+</body>
+</html>

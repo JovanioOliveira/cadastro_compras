@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relatórios de Compras</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container-relatorio">
+        <h1>Relatórios</h1>
+
+        <div class="cards-relatorio">
+            <div class="card" onclick="gerarRelatorio('produto')">
+                <img src="https://cdn-icons-png.flaticon.com/512/1040/1040230.png" alt="Produtos">
+                <h2>Produtos Cadastrados</h2>
+            </div>
+
+            <div class="card" onclick="gerarRelatorio('local')">
+                <img src="https://cdn-icons-png.flaticon.com/512/535/535239.png" alt="Local">
+                <h2>Local da Compra</h2>
+            </div>
+
+            <div class="card" onclick="gerarRelatorio('data')">
+                <img src="https://cdn-icons-png.flaticon.com/512/1170/1170678.png" alt="Datas">
+                <h2>Datas da Compras</h2>
+            </div>
+
+            <div class="card" onclick="gerarRelatorio('mes')">
+                <img src="https://cdn-icons-png.flaticon.com/512/2920/2920212.png" alt="Mês">
+                <h2>Mês das Compras</h2>
+            </div>
+
+            <div class="card" onclick="gerarRelatorio('ano')">
+                <img src="https://cdn-icons-png.flaticon.com/512/2917/2917995.png" alt="Ano">
+                <h2>Anos das Compras</h2>
+            </div>
+
+            <div id="resultado-relatorio"></div>
+
+            <div class="botoes">
+                <button onclick="window.location.href='/'">Sair</button>
+            </div>
+        </div>        
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    
+</body>
+</html>
