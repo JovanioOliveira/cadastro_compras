@@ -13,8 +13,11 @@ app.secret_key = "SEGREDO_MUITO_SEGURO_E_LONGO" # Use uma chave mais segura em p
 # BANCO DE DADOS
 # -------------------------------------------------
 def init_db():
-    conn = sqlite3.connect("compras.db")            
+    """Inicializa o banco de dados com as tabelas necessárias."""
+    conn = sqlite3.connect("compras.db")
     cursor = conn.cursor()
+
+    # Tabela principal de compras
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS compras (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -22,12 +25,22 @@ def init_db():
             local TEXT,
             produto TEXT,
             quantidade INTEGER,
-            valor REAL  /* REAL = Float / Número com ponto decimal */
+            valor REAL  -- REAL = número com ponto decimal
         )
     ''')
+
+    # Tabela auxiliar para armazenar produtos únicos
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS produtos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT UNIQUE
+        )
+    ''')
+
     conn.commit()
     conn.close()
 
+# Inicializa o banco de dados ao iniciar o aplicativo
 init_db()
 
 # -------------------------------------------------
@@ -238,10 +251,29 @@ def gerar_csv():
     return send_file(csv_path, as_attachment=True, download_name='compras.csv')
 
 # NOVO CÓDIGO: Rota para apagar todos os dados e arquivos
-@app.route('/reset')
+@app.route('/reset', methods = ["POST"])
 def reset_data():
-    arquivos_para_deletar = [
-        'compras.db',
+    # NOVO CÓDIGO ATUALIZADO:
+
+    try:
+        from flask import g
+        if hasattr(g, '_database'):
+            db = getattr(g, '_database')
+            db.close()
+            delattr(g, '_database')
+    except Exception:
+        pass
+
+    # Apaga o arquivo de banco se existir
+    if os.path.exists("compras.db"):
+        try:
+            os.remove("compras.db")
+        except PermissionError:
+            flash("⚠️ O banco de dados está em uso. Feche o app e tente novamente.")
+            return redirect('/')
+
+    # Remove os CSVs gerados, se existirem
+    relatorios = [
         'compras.csv',
         'relatorio_ano.csv',
         'relatorio_data.csv',
@@ -249,28 +281,60 @@ def reset_data():
         'relatorio_mes.csv',
         'relatorio_produto.csv'
     ]
-    
-    arquivos_deletados = []
-    
-    for arquivo in arquivos_para_deletar:
-        if os.path.exists(arquivo):
-            os.remove(arquivo)
-            arquivos_deletados.append(arquivo)
-            
-    # Garante que o banco de dados e a tabela serão recriados ao iniciar a próxima sessão.
-    # A função init_db() será chamada no próximo acesso.
-    
-    # Limpa a sessão atual (a lista que estava na tela)
-    session.pop('itens_sessao', None)
-    
-    if arquivos_deletados:
-        flash(f"✅ Reset completo. Arquivos excluídos: {', '.join(arquivos_deletados)}. O banco de dados será recriado no próximo cadastro.")
-    else:
-        flash("⚠️ Reset completo. Nenhum arquivo de base de dados/relatório foi encontrado para exclusão.")
-        
-    # Redireciona para a home ou para o cadastro limpo
-    return redirect('/')
+    for arq in relatorios:
+        if os.path.exists(arq):
+            try:
+                os.remove(arq)
+            except Exception as e:
+                flash(f"⚠️ Erro ao remover {arq}: {e}")
 
+    # Recria o banco de dados vazio imediatamente
+    init_db()
+    with sqlite3.connect("compras.db") as conn:
+        cursor = conn.cursor()
+        cursor.execute('CREATE TABLE IF NOT EXISTS produtos (id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT UNIQUE)')
+        conn.commit()
+
+    # Limpa a sessão atual (a lista da tela)
+    session.pop('itens_sessao', None)
+
+    flash("✅ Reset completo: banco e relatórios apagados e recriados vazios.")
+    return redirect('/index')
+
+# -------------------------------------------------
+# ROTAS DE PRODUTOS
+# -------------------------------------------------
+
+@app.route("/listar_produtos")
+def listar_produtos():
+    conn = sqlite3.connect("compras.db")
+    cursor = conn.cursor()
+    # cursor.execute("SELECT DISTINCT produto FROM compras ORDER BY produto ASC")
+    cursor.execute("SELECT nome FROM produtos ORDER BY nome ASC")
+    produtos = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return jsonify(produtos)
+
+
+@app.route("/adicionar_produto", methods=["POST"])
+def adicionar_produto():
+    data = request.get_json()
+    novo_produto = data.get("produto")
+
+    if not novo_produto:
+        return "Nome de produto inválido", 400
+    
+    # Adicionado nova alteração:
+    conn = sqlite3.connect("compras.db")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("INSERT INTO produtos (nome) VALUES (?)", (novo_produto,))
+        conn.commit()
+        conn.close()
+        return "Produto adicionado", 200
+    except sqlite3.IntegrityError:
+        conn.close()
+        return "Produto já existe", 409
 
 # -------------------------------------------------
 if __name__ == '__main__':

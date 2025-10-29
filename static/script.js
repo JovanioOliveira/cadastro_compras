@@ -64,3 +64,59 @@ function gerarCSV(tipo) {
 function limparRelatorio() {
   document.getElementById("resultado-relatorio").innerHTML = "";
 }
+
+// ----------- PRODUTOS -------------------
+
+// Aguarda o carregamento completo da página
+document.addEventListener("DOMContentLoaded", () => {
+  carregarProdutos();
+
+  const btnAdd = document.getElementById("btnAdicionarProduto");
+  if (btnAdd) {
+    btnAdd.addEventListener("click", adicionarProduto);
+  }
+});
+
+// Função para listar produtos existentes
+function carregarProdutos() {
+  fetch("/listar_produtos")
+    .then(res => res.json())
+    .then(produtos => {
+      const select = document.getElementById("produto");
+      select.innerHTML = "";
+      produtos.forEach(prod => {
+        const option = document.createElement("option");
+        option.value = prod;
+        option.textContent = prod;
+        select.appendChild(option);
+      });
+    })
+    .catch(err => console.error("Erro ao carregar produtos:", err));
+}
+
+// Função para adicionar um novo produto
+function adicionarProduto() {
+  const novoProduto = prompt("Digite o nome do novo produto:");
+  if (novoProduto && novoProduto.trim() !== "") {
+    fetch("/adicionar_produto", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ produto: novoProduto.trim() })
+    })
+      .then(res => {
+        if (res.ok) {
+          alert("Produto adicionado com sucesso!");
+          carregarProdutos();
+        } else {
+          alert("Erro ao adicionar produto!");
+        }
+      })
+      .catch(err => console.error("Erro ao adicionar produto:", err));
+  }
+}
+
+// FUNÇÃO CONFIRMAR RESET
+
+function confirmarReset(){
+  return confirm ("⚠️ Tem certeza que deseja apagar todos os dados e relatórios?");
+}
