@@ -1,320 +1,154 @@
-from flask import Flask, render_template, request, redirect, jsonify, send_file, flash, url_for, session
-import sqlite3
-import csv
+from flask import Flask, render_template, request, redirect, jsonify, send_file, flash, url_for
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import func
 from io import StringIO
+from io import BytesIO
+import csv
+from datetime import datetime
+from dotenv import load_dotenv
 import os
-from datetime import datetime 
+
+load_dotenv()
 
 app = Flask(__name__)
-# A chave secreta é essencial para usar a session
-app.secret_key = "SEGREDO_MUITO_SEGURO_E_LONGO" # Use uma chave mais segura em produção!
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "SEGREDO_MUITO_SEGURO_E_LONGO") 
+
+# 🔗 Conexão com PostgreSQL do Render
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    # URL fixa para testes locais
+    DATABASE_URL = "postgresql://compras_db_ny5g_user:q00cmzOnnraJPKPIuLWku3km8GikZi7I@dpg-d419opgdl3ps73d8ddtg-a.oregon-postgres.render.com/compras_db_ny5g"
+
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+db = SQLAlchemy(app)
 
 # -------------------------------------------------
-# BANCO DE DADOS
+# MODELOS DE BANCO (PostgreSQL)
 # -------------------------------------------------
-def init_db():
-    """Inicializa o banco de dados com as tabelas necessárias."""
-    conn = sqlite3.connect("compras.db")
-    cursor = conn.cursor()
+class Compra(db.Model):
+    __tablename__ = "compras"
+    id = db.Column(db.Integer, primary_key=True)
+    data = db.Column(db.String(20))
+    local = db.Column(db.String(100))
+    produto = db.Column(db.String(100))
+    quantidade = db.Column(db.Integer)
+    valor = db.Column(db.Float)
 
-    # Tabela principal de compras
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS compras (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            data TEXT,
-            local TEXT,
-            produto TEXT,
-            quantidade INTEGER,
-            valor REAL  -- REAL = número com ponto decimal
-        )
-    ''')
+class Produto(db.Model):
+    __tablename__ = "produtos"
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(100), unique=True)
 
-    # Tabela auxiliar para armazenar produtos únicos
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS produtos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome TEXT UNIQUE
-        )
-    ''')
-
-    conn.commit()
-    conn.close()
-
-# Inicializa o banco de dados ao iniciar o aplicativo
-init_db()
+with app.app_context():
+    db.create_all()
 
 # -------------------------------------------------
-# ROTAS
+# ROTAS DE PÁGINAS
 # -------------------------------------------------
-
 @app.route('/')
 def home():
     return render_template('home.html')
 
-@app.route('/cadastro')
-def cadastro():
-    session.pop('itens_sessao', None)   #Limpa sessão sempre que acessar
-    return redirect('/index')
-
 @app.route('/index')
 def index():
-    if 'itens_sessao' not in session:
-        session['itens_sessao'] = []
-    return render_template('index.html', compras=session.get('itens_sessao', []))
+    return render_template('index.html')
 
 @app.route('/relatorio')
 def relatorio():
     return render_template('relatorio.html')
 
-# --- Rotas de Relatório (Mantidas Inalteradas) ---
+# -------------------------------------------------
+# LISTAR COMPRAS (API para o JS)
+# -------------------------------------------------
+@app.route('/listar_compras')
+def listar_compras_api():
+    compras = Compra.query.order_by(Compra.id.asc()).all()
+    lista_de_compras = [
+        [c.id, c.data, c.local, c.produto, c.quantidade, c.valor]
+        for c in compras
+    ]
+    return jsonify(lista_de_compras)
 
-@app.route('/relatorio_dados/<tipo>')
-def relatorio_dados(tipo):
-    conn = sqlite3.connect("compras.db")
-    cursor = conn.cursor()
-    dados = []
-
-    if tipo == "produto":
-        cursor.execute("SELECT produto, local, SUM(valor*quantidade) as Total FROM compras GROUP BY produto, local")
-        dados = [{"Produto": p, "Local": l, "Total R$": f"{t:.2f}".replace('.', ',')} for p, l, t in cursor.fetchall()]
-
-    elif tipo == "local":
-        cursor.execute("SELECT local, strftime('%m', data) as Mes, SUM(valor*quantidade) FROM compras GROUP BY local, Mes")
-        dados = [{"Local": l, "Mês": m, "Total R$": f"{t:.2f}".replace('.', ',')} for l, m, t in cursor.fetchall()]
-
-    elif tipo == "data":
-        cursor.execute("SELECT data, SUM(valor*quantidade) FROM compras GROUP BY data")
-        dados = [{"Data": d, "Total R$": f"{t:.2f}".replace('.', ',')} for d, t in cursor.fetchall()]
-
-    elif tipo == "mes":
-        cursor.execute("SELECT strftime('%m', data) as Mes, SUM(valor*quantidade) FROM compras GROUP BY Mes")
-        dados = [{"Mês": m, "Total R$": f"{t:.2f}".replace('.', ',')} for m, t in cursor.fetchall()]
-
-    elif tipo == "ano":
-        cursor.execute("SELECT strftime('%Y', data) as Ano, SUM(valor*quantidade) FROM compras GROUP BY Ano")
-        dados = [{"Ano": a, "Total R$": f"{t:.2f}".replace('.', ',')} for a, t in cursor.fetchall()]
-
-    conn.close()
-    return jsonify(dados)
-
-@app.route('/gerar_csv_tipo/<tipo>')
-def gerar_csv_tipo(tipo):
-    conn = sqlite3.connect("compras.db")
-    cursor = conn.cursor()
-    nome_arquivo = f"relatorio_{tipo}.csv"
-
-    # Define consulta conforme tipo
-    if tipo == "produto":
-        cursor.execute("SELECT produto, local, SUM(valor*quantidade) FROM compras GROUP BY produto, local")
-        cabecalho = ['Produto', 'Local', 'Total (R$)']
-    elif tipo == "local":
-        cursor.execute("SELECT local, strftime('%m', data), SUM(valor*quantidade) FROM compras GROUP BY local, strftime('%m', data)")
-        cabecalho = ['Local', 'Mês', 'Total (R$)']
-    elif tipo == "data":
-        cursor.execute("SELECT data, SUM(valor*quantidade) FROM compras GROUP BY data")
-        cabecalho = ['Data', 'Total (R$)']
-    elif tipo == "mes":
-        cursor.execute("SELECT strftime('%m', data), SUM(valor*quantidade) FROM compras GROUP BY strftime('%m', data)")
-        cabecalho = ['Mês', 'Total (R$)']
-    elif tipo == "ano":
-        cursor.execute("SELECT strftime('%Y', data), SUM(valor*quantidade) FROM compras GROUP BY strftime('%Y', data)")
-        cabecalho = ['Ano', 'Total (R$)']
-    else:
-        return "Tipo inválido", 400
-
-    dados = cursor.fetchall()
-    conn.close()
-
-    output = StringIO()
-    writer = csv.writer(output, delimiter=';')
-    writer.writerow(cabecalho)
-    for linha in dados:
-        linha_formatada = [f"{x:.2f}".replace('.', ',') if isinstance(x, float) else x for x in linha]
-        writer.writerow(linha_formatada)
-
-    with open(nome_arquivo, 'w', encoding='utf-8-sig', newline='') as f:
-        f.write(output.getvalue())
-
-    return send_file(nome_arquivo, as_attachment=True, download_name=nome_arquivo)
-
-
-# CADASTRAR
+# -------------------------------------------------
+# CADASTRAR COMPRA 
+# -------------------------------------------------
 @app.route('/cadastrar', methods=['POST'])
 def cadastrar():
-    data = request.form.get('data')
-    local = request.form.get('local')
-    produto = request.form.get('produto')
-    quantidade = request.form.get('quantidade')
-    valor_str = request.form.get('valor') 
+    dados = request.get_json()
+    
+    if not dados:
+        return jsonify({"erro": "Dados inválidos ou ausentes."}), 400
+
+    data = dados.get('data')
+    local = dados.get('local')
+    produto = dados.get('produto')
+    quantidade = dados.get('quantidade')
+    valor_str = dados.get('valor')
 
     if not (data and local and produto and quantidade and valor_str):
-        flash("⚠️ Todos os campos devem ser preenchidos!")
-        # CORREÇÃO 1: Redireciona para /index (Cadastro) se faltar campo
-        return redirect('/index') 
+        return jsonify({"erro": "⚠️ Todos os campos devem ser preenchidos!"}), 400
 
-    # ------------------------------------------------------------------
-    # TRATAMENTO MONETÁRIO
-    # ------------------------------------------------------------------
     try:
-        # 1. Substitui vírgula (,) por ponto (.) para o formato numérico americano/SQL
-        valor_limpo = valor_str.replace(',', '.')
-        valor_float = float(valor_limpo) 
-        # Converte a quantidade para inteiro
+        valor_float = float(valor_str)
         quantidade_int = int(quantidade)
-        
     except ValueError:
-        flash("❌ Valor ou Quantidade inválida. Use o formato numérico correto.")
-        # CORREÇÃO 2: Redireciona para /index (Cadastro) se o valor for inválido
-        return redirect('/index')
-    # ------------------------------------------------------------------
+        return jsonify({"erro": "❌ Valor ou Quantidade inválida."}), 400
 
-    # 1. SALVAR NO BANCO DE DADOS (compras.db)
-    conn = sqlite3.connect("compras.db")
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO compras (data, local, produto, quantidade, valor) VALUES (?, ?, ?, ?, ?)",
-        (data, local, produto, quantidade_int, valor_float) 
-    )
-    novo_id = cursor.lastrowid 
-    conn.commit()
-    conn.close()
-
-    # 2. ADICIONAR À LISTA DE SESSÃO (Para exibição imediata)
-    valor_exibicao = f"{valor_float:.2f}".replace('.', ',')
-    novo_item = (novo_id, data, local, produto, quantidade_int, valor_exibicao) 
-    
-    lista_atual = session.get('itens_sessao', [])
-    lista_atual.append(novo_item)
-    session['itens_sessao'] = lista_atual 
-
-    flash("✅ Item cadastrado com sucesso!")
-    
-    # CORREÇÃO PRINCIPAL: Redirecionar para /index para permanecer na tela e ver a lista
-    return redirect('/index')
+    try:
+        nova_compra = Compra(data=data, local=local, produto=produto, quantidade=quantidade_int, valor=valor_float)
+        db.session.add(nova_compra)
+        db.session.commit()
+        return jsonify({"mensagem": "✅ Item cadastrado com sucesso!"}), 200
+    except Exception:
+        db.session.rollback()
+        return jsonify({"erro": "Erro ao cadastrar no banco de dados."}), 500
 
 
-# EXCLUIR ITEM
+# -------------------------------------------------
+# EXCLUIR ITEM (API para o JS)
+# -------------------------------------------------
+@app.route('/deletar/<int:id>', methods=['DELETE'])
+def deletar_item_api(id):
+    item = Compra.query.get(id)
+    if item:
+        db.session.delete(item)
+        db.session.commit()
+        return jsonify({"mensagem": "Item excluído com sucesso!"}), 200
+    return jsonify({"erro": "Item não encontrado."}), 404
+
 @app.route('/delete/<int:id>', methods=['POST'])
 def delete_item(id):
-    conn = sqlite3.connect("compras.db")
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM compras WHERE id = ?", (id,))
-    conn.commit()
-    conn.close()
-    
-    if 'itens_sessao' in session:
-        session['itens_sessao'] = [item for item in session['itens_sessao'] if item[0] != id]
-
-    flash("🗑️ Item excluído com sucesso!")
-    # CORREÇÃO 3: Redireciona para /index (Cadastro) após excluir
-    return redirect('/index')
-
-@app.route('/salvar', methods=['GET'])
-def salvar():
-    session.pop('itens_sessao', None) 
-    flash("💾 Itens cadastrados salvos com sucesso!")
+    item = Compra.query.get(id)
+    if item:
+        db.session.delete(item)
+        db.session.commit()
+        flash("🗑️ Item excluído com sucesso!")
     return redirect('/index')
 
 
-@app.route('/gerar_csv', methods=['GET'])
-def gerar_csv():
-    conn = sqlite3.connect("compras.db")
-    cursor = conn.cursor()
-    # Consulta o banco (onde o valor está em formato numérico para cálculos)
-    cursor.execute("SELECT * FROM compras")
-    compras = cursor.fetchall()
-    conn.close()
-
-    # Formata a saída do CSV para manter a vírgula como separador decimal
-    output = StringIO()
-    writer = csv.writer(output, delimiter=';') # Use ponto e vírgula como separador do CSV (padrão Brasil)
-    
-    # Cabeçalho
-    writer.writerow(['ID', 'Data', 'Local', 'Produto', 'Quantidade', 'Valor (R$)'])
-    
-    # Dados: Formata o valor de volta para R$ com vírgula antes de escrever no CSV
-    linhas_formatadas = []
-    for item in compras:
-        # Item: (id, data, local, produto, quantidade, valor_float)
-        valor_formatado_br = f"{item[5]:.2f}".replace('.', ',') # item[5] é o valor float
-        linhas_formatadas.append((item[0], item[1], item[2], item[3], item[4], valor_formatado_br))
-        
-    writer.writerows(linhas_formatadas)
-
-    output.seek(0)
-    csv_path = "compras.csv"
-
-    # Salva o arquivo CSV
-    with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
-        f.write(output.getvalue())
-
-    return send_file(csv_path, as_attachment=True, download_name='compras.csv')
-
-# NOVO CÓDIGO: Rota para apagar todos os dados e arquivos
-@app.route('/reset', methods = ["POST"])
+# -------------------------------------------------
+# RESET COMPLETO
+# -------------------------------------------------
+@app.route('/reset', methods=["POST"])
 def reset_data():
-    # NOVO CÓDIGO ATUALIZADO:
-
-    try:
-        from flask import g
-        if hasattr(g, '_database'):
-            db = getattr(g, '_database')
-            db.close()
-            delattr(g, '_database')
-    except Exception:
-        pass
-
-    # Apaga o arquivo de banco se existir
-    if os.path.exists("compras.db"):
-        try:
-            os.remove("compras.db")
-        except PermissionError:
-            flash("⚠️ O banco de dados está em uso. Feche o app e tente novamente.")
-            return redirect('/')
-
-    # Remove os CSVs gerados, se existirem
-    relatorios = [
-        'compras.csv',
-        'relatorio_ano.csv',
-        'relatorio_data.csv',
-        'relatorio_local.csv',
-        'relatorio_mes.csv',
-        'relatorio_produto.csv'
-    ]
-    for arq in relatorios:
-        if os.path.exists(arq):
-            try:
-                os.remove(arq)
-            except Exception as e:
-                flash(f"⚠️ Erro ao remover {arq}: {e}")
-
-    # Recria o banco de dados vazio imediatamente
-    init_db()
-    with sqlite3.connect("compras.db") as conn:
-        cursor = conn.cursor()
-        cursor.execute('CREATE TABLE IF NOT EXISTS produtos (id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT UNIQUE)')
-        conn.commit()
-
-    # Limpa a sessão atual (a lista da tela)
-    session.pop('itens_sessao', None)
-
-    flash("✅ Reset completo: banco e relatórios apagados e recriados vazios.")
+    db.session.query(Compra).delete()
+    db.session.query(Produto).delete()
+    db.session.commit()
+    flash("✅ Reset completo: banco limpo.")
     return redirect('/index')
 
 # -------------------------------------------------
-# ROTAS DE PRODUTOS
+# PRODUTOS
 # -------------------------------------------------
-
 @app.route("/listar_produtos")
 def listar_produtos():
-    conn = sqlite3.connect("compras.db")
-    cursor = conn.cursor()
-    # cursor.execute("SELECT DISTINCT produto FROM compras ORDER BY produto ASC")
-    cursor.execute("SELECT nome FROM produtos ORDER BY nome ASC")
-    produtos = [row[0] for row in cursor.fetchall()]
-    conn.close()
-    return jsonify(produtos)
-
+    produtos = Produto.query.order_by(Produto.nome.asc()).all()
+    return jsonify([p.nome for p in produtos])
 
 @app.route("/adicionar_produto", methods=["POST"])
 def adicionar_produto():
@@ -322,20 +156,159 @@ def adicionar_produto():
     novo_produto = data.get("produto")
 
     if not novo_produto:
-        return "Nome de produto inválido", 400
-    
-    # Adicionado nova alteração:
-    conn = sqlite3.connect("compras.db")
-    cursor = conn.cursor()
+        return "Nome inválido", 400
+
     try:
-        cursor.execute("INSERT INTO produtos (nome) VALUES (?)", (novo_produto,))
-        conn.commit()
-        conn.close()
+        novo = Produto(nome=novo_produto)
+        db.session.add(novo)
+        db.session.commit()
         return "Produto adicionado", 200
-    except sqlite3.IntegrityError:
-        conn.close()
+    except Exception:
+        db.session.rollback()
         return "Produto já existe", 409
 
 # -------------------------------------------------
+# RELATÓRIOS (PostgreSQL)
+# -------------------------------------------------
+@app.route('/relatorio_dados/<tipo>')
+def relatorio_dados(tipo):
+    dados = []
+
+    if tipo == "produto":
+        resultados = db.session.query(
+            Compra.produto, Compra.local, func.sum(Compra.valor * Compra.quantidade)
+        ).group_by(Compra.produto, Compra.local).all()
+        dados = [{"Produto": p, "Local": l, "Total R$": f"{t:.2f}".replace('.', ',')} for p, l, t in resultados]
+
+    elif tipo == "local":
+        resultados = db.session.query(
+            Compra.local, func.substr(Compra.data, 6, 2), func.sum(Compra.valor * Compra.quantidade)
+        ).group_by(Compra.local, func.substr(Compra.data, 6, 2)).all()
+        dados = [{"Local": l, "Mês": m, "Total R$": f"{t:.2f}".replace('.', ',')} for l, m, t in resultados]
+
+    elif tipo == "data":
+        resultados = db.session.query(
+            Compra.data, func.sum(Compra.valor * Compra.quantidade)
+        ).group_by(Compra.data).all()
+        dados = [{"Data": d, "Total R$": f"{t:.2f}".replace('.', ',')} for d, t in resultados]
+
+    elif tipo == "mes":
+        resultados = db.session.query(
+            func.substr(Compra.data, 6, 2), func.sum(Compra.valor * Compra.quantidade)
+        ).group_by(func.substr(Compra.data, 6, 2)).all()
+        dados = [{"Mês": m, "Total R$": f"{t:.2f}".replace('.', ',')} for m, t in resultados]
+
+    elif tipo == "ano":
+        resultados = db.session.query(
+            func.substr(Compra.data, 1, 4), func.sum(Compra.valor * Compra.quantidade)
+        ).group_by(func.substr(Compra.data, 1, 4)).all()
+        dados = [{"Ano": a, "Total R$": f"{t:.2f}".replace('.', ',')} for a, t in resultados]
+
+    return jsonify(dados)
+
+# -------------------------------------------------
+# GERAR CSV DE CADA TIPO DE RELATÓRIO (COM BOM UTF-8)
+# -------------------------------------------------
+@app.route("/gerar_csv_tipo/<tipo>")
+def gerar_csv_tipo(tipo):
+    
+    if tipo == "produto":
+        resultados = db.session.query(
+            Compra.produto,
+            func.count(Compra.id),
+            func.sum(Compra.valor * Compra.quantidade)
+        ).group_by(Compra.produto).all()
+        cabecalho = ["Produto", "Quantidade", "Total (R$)"]
+
+    elif tipo == "local":
+        resultados = db.session.query(
+            Compra.local,
+            func.count(Compra.id),
+            func.sum(Compra.valor * Compra.quantidade)
+        ).group_by(Compra.local).all()
+        cabecalho = ["Local", "Quantidade", "Total (R$)"]
+
+    elif tipo == "data":
+        resultados = db.session.query(
+            Compra.data,
+            func.count(Compra.id),
+            func.sum(Compra.valor * Compra.quantidade)
+        ).group_by(Compra.data).all()
+        cabecalho = ["Data", "Quantidade", "Total (R$)"]
+
+    elif tipo == "mes":
+        resultados = db.session.query(
+            func.substr(Compra.data, 6, 2),
+            func.count(Compra.id),
+            func.sum(Compra.valor * Compra.quantidade)
+        ).group_by(func.substr(Compra.data, 6, 2)).all()
+        cabecalho = ["Mês", "Quantidade", "Total (R$)"]
+
+    elif tipo == "ano":
+        resultados = db.session.query(
+            func.substr(Compra.data, 1, 4),
+            func.count(Compra.id),
+            func.sum(Compra.valor * Compra.quantidade)
+        ).group_by(func.substr(Compra.data, 1, 4)).all()
+        cabecalho = ["Ano", "Quantidade", "Total (R$)"]
+
+    else:
+        return "Tipo de relatório inválido", 400
+
+    csv_output = StringIO()
+    writer = csv.writer(csv_output, delimiter=';')
+    writer.writerow(cabecalho)
+    for linha in resultados:
+        linha_formatada = [
+            str(linha[0]),
+            str(linha[1]),
+            f"{linha[2]:.2f}".replace('.', ',') if linha[2] is not None else "0,00"
+        ]
+        writer.writerow(linha_formatada)
+
+    csv_output.seek(0)
+    # 🌟 CORREÇÃO DE CODIFICAÇÃO: Adiciona o Byte Order Mark (BOM) para compatibilidade com o Excel
+    csv_bytes = BytesIO(b'\xef\xbb\xbf' + csv_output.getvalue().encode('utf-8'))
+
+    return send_file(
+        csv_bytes,
+        as_attachment=True,
+        download_name=f"relatorio_{tipo}.csv",
+        mimetype="text/csv"
+    )
+
+# -------------------------------------------------
+# GERAR CSV COMPLETO (COM BOM UTF-8)
+# -------------------------------------------------
+@app.route('/gerar_csv', methods=['GET'])
+def gerar_csv_completo():
+    compras = Compra.query.order_by(Compra.id.asc()).all()
+    
+    csv_output = StringIO()
+    writer = csv.writer(csv_output, delimiter=';')
+    
+    writer.writerow(["ID", "Data", "Local", "Produto", "Quantidade", "Valor (R$)"])
+    
+    for item in compras:
+        writer.writerow([
+            item.id,
+            item.data,
+            item.local,
+            item.produto,
+            item.quantidade,
+            f"{item.valor:.2f}".replace('.', ',')
+        ])
+
+    csv_output.seek(0)
+    # 🌟 CORREÇÃO DE CODIFICAÇÃO: Adiciona o Byte Order Mark (BOM) para compatibilidade com o Excel
+    csv_bytes = BytesIO(b'\xef\xbb\xbf' + csv_output.getvalue().encode('utf-8'))
+
+    return send_file(
+        csv_bytes,
+        as_attachment=True,
+        download_name="compras_completas.csv",
+        mimetype="text/csv"
+    )
+
 if __name__ == '__main__':
     app.run(debug=True)
